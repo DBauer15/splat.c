@@ -58,7 +58,7 @@ vec3f cross3(vec3f a, vec3f b);
 mat4 mat4_id();
 mat4 matmul_mat(mat4 b, mat4 a);
 vec3f matmul_v3(mat4 b, vec3f a);
-vec4f matmul_v4(mat4 b, vec4f a);
+vec4f matmul_v4(mat4 *b, vec4f *a);
 /* end matrix ops */
 
 #endif

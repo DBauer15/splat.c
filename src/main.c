@@ -1,3 +1,4 @@
+#include <time.h>
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
@@ -9,6 +10,7 @@
 
 #include <splatc/camera.h>
 #include <splatc/linalg.h>
+#include <splatc/loader.h>
 #include <splatc/ppm.h>
 
 #define WIDTH   1280
@@ -96,14 +98,15 @@ frame_create(size_t width, size_t height, size_t channels) {
 }
 
 void
-frame_put_pixel(frame *f, size_t x, size_t y, uint8_t* c) {
+frame_put_pixel(frame *f, size_t x, size_t y, float* c) {
     if (x < 0 || y < 0 || x >= f->width || y >= f->height) return;
+    y = f->height - 1 - y;
 
     size_t coord = f->channels * f->width * y + f->channels * x;
 
     for (size_t i = 0; i < f->channels; ++i) {
         if (c) {
-            f->pixels[coord + i] = c[i];
+            f->pixels[coord + i] = 255 * c[i];
         }
         else {
             f->pixels[coord + i] = 255;
@@ -118,7 +121,16 @@ image_clear(frame* f) {
 
 
 void
-image_render(frame *frame) {
+image_render(vec3f *points, gsmodel *model, frame *frame) {
+    for (size_t i = 0; i < model->n_points; ++i) {
+        if (points[i].x < -1.f || points[i].x > 1.f) continue;
+        if (points[i].y < -1.f || points[i].y > 1.f) continue;
+        if (points[i].z < -1.f || points[i].z > 1.f) continue;
+        size_t x = frame->width * (0.5f + points[i].x * 0.5f);
+        size_t y = frame->height * (0.5f + points[i].y * 0.5f);
+
+        frame_put_pixel(frame, x, y, model->colors[i].v);
+    }
 }
 
 void
@@ -132,6 +144,12 @@ main(int ac, const char** av) {
         return -1;
     }
 
+    /* load gsmodel */
+    gsmodel *model = loader_gsmodel_from_ply(av[1]);
+    if (!model) return -1;
+    vec3f* ndc_points = calloc(model->n_points, sizeof(vec3f));
+
+    /* create window */
     GLFWwindow* window;
     uint32_t input_state = 0;
 
@@ -161,11 +179,11 @@ main(int ac, const char** av) {
 
     /* Apply transformation */
     camera cam = {};
-    cam.pos = (vec3f){ 0.f, 0.f, 5.f };
+    cam.pos = (vec3f){ 0.f, 0.f, -1.f };
     cam.at = (vec3f){ 0.f, 0.f, 0.f };
     cam.up = (vec3f){ 0.f, 1.f, 0.f };
     cam.fovy = 0.35 * M_PI;
-    cam.near = 0.01f;
+    cam.near = 0.0001f;
     cam.far = 100.f;
     cam.aspect = (float)frame_width / frame_height;
     glfwSetWindowUserPointer(window, &input_state);
@@ -176,19 +194,45 @@ main(int ac, const char** av) {
     /* Render image */
     frame image = frame_create(frame_width, frame_height, 3);
 
-    size_t frame_no = 0;
+    size_t frame_no = 0;    
+    clock_t start, end, frame_start, frame_end;
+    double trans_time, render_time, frame_time;
+    double fps = 0;
 
     while (!glfwWindowShouldClose(window)) {
+        frame_start = clock();
         /* Render here */
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         image_clear(&image);
 
         /* Update view */
+        start = clock();
         update_view(&cam, input_state);
         view = camera_get_view(&cam);
+        for (int i = 0; i < model->n_points; ++i) {
+            vec4f vertex = (vec4f){
+                model->positions[i].x,
+                model->positions[i].y,
+                model->positions[i].z,
+                1.f
+            };
+            vertex = matmul_v4(&view, &vertex);
+            vertex = matmul_v4(&proj, &vertex);
+
+            float rw = 1.f / (vertex.w + 1e-5f);
+            ndc_points[i].v[0] = (vertex.x * rw);
+            ndc_points[i].v[1] = (vertex.y * rw);
+            ndc_points[i].v[2] = (vertex.z * rw);
+        }
+        end = clock();
+        trans_time = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         /* Draw frame */
+        start = clock();
+        image_render(ndc_points, model, &image);
         glDrawPixels(image.width, image.height, GL_RGB, GL_UNSIGNED_BYTE, image.pixels);
+        end = clock();
+        render_time = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         /* Swap front and back buffers */
         glfwSwapBuffers(window);
@@ -196,10 +240,20 @@ main(int ac, const char** av) {
         /* Poll for and process events */
         glfwPollEvents();
 
+        frame_end = clock();
+        frame_time = ((double)(frame_end - frame_start)) / CLOCKS_PER_SEC;
+        fps = fps * 0.5 + (1.f/frame_time) * 0.5;
+        if (frame_no % 10 == 0)
+            printf("%f (%f | %f)\n", fps, trans_time, render_time);
+
         frame_no = (frame_no+1)%1200;
     }
 
     glfwTerminate();
+
+    /* cleanup */
+    free(ndc_points);
+    loader_gsmodel_destroy(model);
 
     return 0;
 }

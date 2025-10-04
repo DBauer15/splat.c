@@ -104,12 +104,12 @@ matmul_v3(mat4 b, vec3f a) {
 }
 
 vec4f
-matmul_v4(mat4 b, vec4f a) {
+matmul_v4(mat4 *b, vec4f *a) {
     vec4f c = {};
     for (int i = 0; i < 4; ++i) {
         c.v[i] = 0.f;
         for (int j = 0; j < 4; ++j) {
-            c.v[i] += a.v[j] * b.vv[j][i];
+            c.v[i] += a->v[j] * b->vv[j][i];
         }
     }
     return c;
