@@ -1,4 +1,5 @@
 #include <splatc/linalg.h>
+#include <string.h>
 #include <math.h>
 
 #define NORM_OP(N) \
@@ -77,18 +78,18 @@ cross3(vec3f a, vec3f b) {
 MAT_ID(4)
 
 
-mat4
-matmul_mat(mat4 b, mat4 a) {
-    mat4 c = {};
+void
+matmul_mat(mat4 *b, mat4 *a, mat4 *c) {
+    // mat4 c = {};
+    memset(c, 0, 16 * sizeof(float));
     for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            c.vv[i][j] = 0.f;
-            for (int k = 0; k < 4; ++k) {
-                c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
+        for (int k = 0; k < 4; ++k) {
+            for (int j = 0; j < 4; ++j) {
+                c->vv[i][j] += b->vv[i][k] * a->vv[k][j];
             }
         }
     }
-    return c;
+    // return c;
 }
 
 vec3f
@@ -106,9 +107,8 @@ matmul_v3(mat4 b, vec3f a) {
 vec4f
 matmul_v4(mat4 *b, vec4f *a) {
     vec4f c = {};
-    for (int i = 0; i < 4; ++i) {
-        c.v[i] = 0.f;
-        for (int j = 0; j < 4; ++j) {
+    for (int j = 0; j < 4; ++j) {
+        for (int i = 0; i < 4; ++i) {
             c.v[i] += a->v[j] * b->vv[j][i];
         }
     }

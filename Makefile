@@ -1,6 +1,6 @@
 
 CC = gcc
-CCFLAGS = -Wall -Wextra
+CCFLAGS = -Wall -Wextra -O3 -std=c99
 CCLINKFLAGS = 
 INC = 
 

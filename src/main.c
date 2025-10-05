@@ -12,17 +12,11 @@
 #include <splatc/linalg.h>
 #include <splatc/loader.h>
 #include <splatc/ppm.h>
+#include <splatc/rasterizer.h>
 
 #define WIDTH   1280
 #define HEIGHT  720
 
-typedef struct {
-    size_t width;
-    size_t height;
-    size_t channels;
-    float aspect;
-    uint8_t* pixels;
-} frame;
 
 #define INPUT_W (1<<0)
 #define INPUT_A (1<<1)
@@ -87,50 +81,31 @@ update_view(camera *cam, uint32_t input_state) {
     cam->at.z += dot3(offset, cam->forward);
 }
 
-frame 
-frame_create(size_t width, size_t height, size_t channels) {
-    uint8_t* pixels = calloc(width * height * channels, sizeof(uint8_t));
-
-    float aspect = (float)width / height;
-    return (frame){
-        width, height, channels, aspect, pixels 
-    };
-}
-
-void
-frame_put_pixel(frame *f, size_t x, size_t y, float* c) {
-    if (x < 0 || y < 0 || x >= f->width || y >= f->height) return;
-    y = f->height - 1 - y;
-
-    size_t coord = f->channels * f->width * y + f->channels * x;
-
-    for (size_t i = 0; i < f->channels; ++i) {
-        if (c) {
-            f->pixels[coord + i] = 255 * c[i];
-        }
-        else {
-            f->pixels[coord + i] = 255;
-        }
-    }
-}
-
-void
-image_clear(frame* f) {
-    memset(f->pixels, 0, f->height * f->width * f->channels * sizeof(uint8_t));
-}
 
 
 void
 image_render(vec3f *points, gsmodel *model, frame *frame) {
-    for (size_t i = 0; i < model->n_points; ++i) {
-        if (points[i].x < -1.f || points[i].x > 1.f) continue;
-        if (points[i].y < -1.f || points[i].y > 1.f) continue;
-        if (points[i].z < -1.f || points[i].z > 1.f) continue;
-        size_t x = frame->width * (0.5f + points[i].x * 0.5f);
-        size_t y = frame->height * (0.5f + points[i].y * 0.5f);
+    // for (size_t x = 0; x < frame->width; ++x) {
+    //     for (size_t y = 0; y < frame->height; ++y) {
+    //         for (size_t n = 0; n < 8; ++n) {
+    //             int idx = (rand() % model->n_points);
+    //             if (abs((0.5 + points[idx].x * 0.5) * frame->width - x) < 64 && abs((0.5 + points[idx].y * 0.5) * frame->height - y) < 64) {
+    //                 frame_put_pixel(frame, x, y, model->colors[idx].v);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
 
-        frame_put_pixel(frame, x, y, model->colors[i].v);
-    }
+    // for (size_t i = 0; i < model->n_points; ++i) {
+    //     if (points[i].x < -1.f || points[i].x > 1.f) continue;
+    //     if (points[i].y < -1.f || points[i].y > 1.f) continue;
+    //     if (points[i].z < -1.f || points[i].z > 1.f) continue;
+    //     size_t x = frame->width * (0.5f + points[i].x * 0.5f);
+    //     size_t y = frame->height * (0.5f + points[i].y * 0.5f);
+    //     frame_put_pixel(frame, x, y, model->colors[i].v);
+    // }
+
 }
 
 void
@@ -147,7 +122,10 @@ main(int ac, const char** av) {
     /* load gsmodel */
     gsmodel *model = loader_gsmodel_from_ply(av[1]);
     if (!model) return -1;
-    vec3f* ndc_points = calloc(model->n_points, sizeof(vec3f));
+    // vec3f* ndc_points = calloc(model->n_points, sizeof(vec3f));
+    vec2f l = {-1.f, -1.f};
+    vec2f u = {1.f, 1.f};
+    raster_ctx *ctx = rasterizer_context_create(model, l, u);
 
     /* create window */
     GLFWwindow* window;
@@ -158,7 +136,8 @@ main(int ac, const char** av) {
         return -1;
 
     /* Create a windowed mode window and its OpenGL context */
-    window = glfwCreateWindow(WIDTH, HEIGHT, "splat.c", NULL, NULL);
+    char window_title[128] = "splat.c";
+    window = glfwCreateWindow(WIDTH, HEIGHT, window_title, NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -177,7 +156,7 @@ main(int ac, const char** av) {
     printf("Window(%d, %d)\n", frame_width, frame_height);
 
 
-    /* Apply transformation */
+    /* set up camera */
     camera cam = {};
     cam.pos = (vec3f){ 0.f, 0.f, -1.f };
     cam.at = (vec3f){ 0.f, 0.f, 0.f };
@@ -188,11 +167,9 @@ main(int ac, const char** av) {
     cam.aspect = (float)frame_width / frame_height;
     glfwSetWindowUserPointer(window, &input_state);
 
-    mat4 proj = camera_get_projection(&cam);
-    mat4 view = mat4_id();
-
     /* Render image */
-    frame image = frame_create(frame_width, frame_height, 3);
+    frame *image = rasterizer_frame_create(frame_width, frame_height, 3);
+
 
     size_t frame_no = 0;    
     clock_t start, end, frame_start, frame_end;
@@ -201,36 +178,21 @@ main(int ac, const char** av) {
 
     while (!glfwWindowShouldClose(window)) {
         frame_start = clock();
-        /* Render here */
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        image_clear(&image);
 
         /* Update view */
-        start = clock();
         update_view(&cam, input_state);
-        view = camera_get_view(&cam);
-        for (int i = 0; i < model->n_points; ++i) {
-            vec4f vertex = (vec4f){
-                model->positions[i].x,
-                model->positions[i].y,
-                model->positions[i].z,
-                1.f
-            };
-            vertex = matmul_v4(&view, &vertex);
-            vertex = matmul_v4(&proj, &vertex);
-
-            float rw = 1.f / (vertex.w + 1e-5f);
-            ndc_points[i].v[0] = (vertex.x * rw);
-            ndc_points[i].v[1] = (vertex.y * rw);
-            ndc_points[i].v[2] = (vertex.z * rw);
-        }
+        start = clock();
+        rasterizer_preprocess(ctx, &cam);
+        rasterizer_mark_visible(ctx, &cam);
         end = clock();
         trans_time = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         /* Draw frame */
         start = clock();
-        image_render(ndc_points, model, &image);
-        glDrawPixels(image.width, image.height, GL_RGB, GL_UNSIGNED_BYTE, image.pixels);
+        rasterizer_frame_clear(image);
+        rasterizer_render(ctx, &cam, image);
+        glDrawPixels(image->width, image->height, GL_RGB, GL_UNSIGNED_BYTE, image->pixels);
         end = clock();
         render_time = ((double)(end - start)) / CLOCKS_PER_SEC;
 
@@ -240,11 +202,14 @@ main(int ac, const char** av) {
         /* Poll for and process events */
         glfwPollEvents();
 
+        /* Update FPS */
         frame_end = clock();
         frame_time = ((double)(frame_end - frame_start)) / CLOCKS_PER_SEC;
         fps = fps * 0.5 + (1.f/frame_time) * 0.5;
-        if (frame_no % 10 == 0)
-            printf("%f (%f | %f)\n", fps, trans_time, render_time);
+        if (frame_no % 10 == 0) {
+            snprintf(window_title, 128, "splat.c | %.1f (%.3f / %.3f)", fps, trans_time, render_time);
+            glfwSetWindowTitle(window, window_title);
+        }
 
         frame_no = (frame_no+1)%1200;
     }
@@ -252,7 +217,8 @@ main(int ac, const char** av) {
     glfwTerminate();
 
     /* cleanup */
-    free(ndc_points);
+    rasterizer_context_destroy(ctx);
+    rasterizer_frame_destroy(image);
     loader_gsmodel_destroy(model);
 
     return 0;
