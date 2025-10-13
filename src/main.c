@@ -14,9 +14,10 @@
 #include <splatc/ppm.h>
 #include <splatc/rasterizer.h>
 
-#define WIDTH   1280
-#define HEIGHT  720
+#define WIDTH   400
+#define HEIGHT  300
 
+#define TILESIZE 32
 
 #define INPUT_W (1<<0)
 #define INPUT_A (1<<1)
@@ -82,32 +83,6 @@ update_view(camera *cam, uint32_t input_state) {
 }
 
 
-
-void
-image_render(vec3f *points, gsmodel *model, frame *frame) {
-    // for (size_t x = 0; x < frame->width; ++x) {
-    //     for (size_t y = 0; y < frame->height; ++y) {
-    //         for (size_t n = 0; n < 8; ++n) {
-    //             int idx = (rand() % model->n_points);
-    //             if (abs((0.5 + points[idx].x * 0.5) * frame->width - x) < 64 && abs((0.5 + points[idx].y * 0.5) * frame->height - y) < 64) {
-    //                 frame_put_pixel(frame, x, y, model->colors[idx].v);
-    //                 break;
-    //             }
-    //         }
-    //     }
-    // }
-
-    // for (size_t i = 0; i < model->n_points; ++i) {
-    //     if (points[i].x < -1.f || points[i].x > 1.f) continue;
-    //     if (points[i].y < -1.f || points[i].y > 1.f) continue;
-    //     if (points[i].z < -1.f || points[i].z > 1.f) continue;
-    //     size_t x = frame->width * (0.5f + points[i].x * 0.5f);
-    //     size_t y = frame->height * (0.5f + points[i].y * 0.5f);
-    //     frame_put_pixel(frame, x, y, model->colors[i].v);
-    // }
-
-}
-
 void
 image_save(frame *frame) {
     ppm_write(frame->pixels, WIDTH, HEIGHT, "render.ppm");
@@ -170,7 +145,6 @@ main(int ac, const char** av) {
     /* Render image */
     frame *image = rasterizer_frame_create(frame_width, frame_height, 3);
 
-
     size_t frame_no = 0;    
     clock_t start, end, frame_start, frame_end;
     double trans_time, render_time, frame_time;
@@ -183,15 +157,25 @@ main(int ac, const char** av) {
         /* Update view */
         update_view(&cam, input_state);
         start = clock();
-        rasterizer_preprocess(ctx, &cam);
-        rasterizer_mark_visible(ctx, &cam);
+        rasterizer_preprocess(ctx, &cam, image);
         end = clock();
         trans_time = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         /* Draw frame */
         start = clock();
         rasterizer_frame_clear(image);
-        rasterizer_render(ctx, &cam, image);
+        float tilefracx = 2.f * (float)TILESIZE / frame_width;
+        float tilefracy = 2.f * (float)TILESIZE / frame_height;
+        for (int i = 0; i < (frame_width+TILESIZE-1) / TILESIZE; ++i) {
+            for (int j = 0; j < (frame_height+TILESIZE-1) / TILESIZE; ++j) {
+                vec2f tl = { -1.f + i * tilefracx, -1.f + j * tilefracy };
+                vec2f tu = { -1.f + (i+1) * tilefracx, -1.f + (j+1) * tilefracy };
+
+                rasterizer_set_tile(ctx, tl, tu);
+                rasterizer_mark_visible(ctx, &cam);
+                rasterizer_render(ctx, &cam, image);
+            }
+        }
         glDrawPixels(image->width, image->height, GL_RGB, GL_UNSIGNED_BYTE, image->pixels);
         end = clock();
         render_time = ((double)(end - start)) / CLOCKS_PER_SEC;

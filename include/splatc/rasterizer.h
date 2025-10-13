@@ -28,7 +28,10 @@ raster_ctx*
 rasterizer_context_create(gsmodel* model, vec2f tile_lower_bound, vec2f tile_upper_bound);
 
 void
-rasterizer_preprocess(raster_ctx *ctx, camera *camera);
+rasterizer_set_tile(raster_ctx *ctx, vec2f tile_lower_bound, vec2f tile_upper_bound);
+
+void
+rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame);
 
 void
 rasterizer_mark_visible(raster_ctx *ctx, camera *camera);

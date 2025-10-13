@@ -28,6 +28,11 @@ typedef union {
 } vec4f;
 
 typedef union {
+    float v[9];
+    float vv[3][3];
+} mat3;
+
+typedef union {
     float v[16];
     float vv[4][4];
 } mat4;
@@ -46,6 +51,10 @@ vec2f add2(vec2f a, vec2f b);
 vec3f add3(vec3f a, vec3f b);
 vec4f add4(vec4f a, vec4f b);
 
+vec2f mul2(vec2f a, vec2f b);
+vec3f mul3(vec3f a, vec3f b);
+vec4f mul4(vec4f a, vec4f b);
+
 vec2f norm2(vec2f a);
 vec3f norm3(vec3f a);
 vec4f norm4(vec4f a);
@@ -55,10 +64,15 @@ vec3f cross3(vec3f a, vec3f b);
 
 
 /* matrix ops */
+mat3 mat3_id();
 mat4 mat4_id();
-void matmul_mat(mat4 *b, mat4 *a, mat4 *c);
-vec3f matmul_v3(mat4 b, vec3f a);
-vec4f matmul_v4(mat4 *b, vec4f *a);
+mat3 matmul3(mat3 b, mat3 a);
+mat4 matmul4(mat4 b, mat4 a);
+vec3f matmulv3(mat4 b, vec3f a);
+vec4f matmulv4(mat4 b, vec4f a);
+
+mat3 transpose3(mat3 m);
+mat4 transpose4(mat4 m);
 /* end matrix ops */
 
 #endif

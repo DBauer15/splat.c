@@ -1,8 +1,8 @@
 
 CC = gcc
 CCFLAGS = -Wall -Wextra -O3 -std=c99
-CCLINKFLAGS = 
-INC = 
+CCLINKFLAGS = -L/opt/homebrew/opt/libomp/lib
+INC = -I/opt/homebrew/opt/libomp/include
 
 SRCDIR = src
 INCLUDEDIR = include

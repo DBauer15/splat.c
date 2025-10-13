@@ -39,6 +39,15 @@
         return result;                              \
     }
 
+#define MUL_OP(N) \
+    vec##N##f mul##N (vec##N##f a, vec##N##f b) {   \
+        vec##N##f result;                           \
+        for (int i = 0; i < N; ++i) {               \
+            result.v[i] = a.v[i] * b.v[i];          \
+        }                                           \
+        return result;                              \
+    }
+
 
 DOT_OP(2)
 DOT_OP(3)
@@ -51,6 +60,10 @@ SUB_OP(4)
 ADD_OP(2)
 ADD_OP(3)
 ADD_OP(4)
+
+MUL_OP(2)
+MUL_OP(3)
+MUL_OP(4)
 
 NORM_OP(2)
 NORM_OP(3)
@@ -75,29 +88,40 @@ cross3(vec3f a, vec3f b) {
         return a;                       \
     }
 
+MAT_ID(3)
 MAT_ID(4)
 
-
-void
-matmul_mat(mat4 *b, mat4 *a, mat4 *c) {
-    // mat4 c = {};
-    memset(c, 0, 16 * sizeof(float));
+mat3
+matmul3(mat3 b, mat3 a) {
+    mat3 c = {};
     for (int i = 0; i < 4; ++i) {
         for (int k = 0; k < 4; ++k) {
             for (int j = 0; j < 4; ++j) {
-                c->vv[i][j] += b->vv[i][k] * a->vv[k][j];
+                c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
             }
         }
     }
-    // return c;
+    return c;
+}
+
+mat4
+matmul4(mat4 b, mat4 a) {
+    mat4 c = {};
+    for (int i = 0; i < 4; ++i) {
+        for (int k = 0; k < 4; ++k) {
+            for (int j = 0; j < 4; ++j) {
+                c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
+            }
+        }
+    }
+    return c;
 }
 
 vec3f
-matmul_v3(mat4 b, vec3f a) {
+matmulv3(mat4 b, vec3f a) {
     vec3f c = {};
-    for (int i = 0; i < 3; ++i) {
-        c.v[i] = 0.f;
-        for (int j = 0; j < 4; ++j) {
+    for (int j = 0; j < 4; ++j) {
+        for (int i = 0; i < 3; ++i) {
             c.v[i] += (j == 3 ? 1.f : a.v[j]) * b.vv[j][i];
         }
     }
@@ -105,12 +129,34 @@ matmul_v3(mat4 b, vec3f a) {
 }
 
 vec4f
-matmul_v4(mat4 *b, vec4f *a) {
+matmulv4(mat4 b, vec4f a) {
     vec4f c = {};
     for (int j = 0; j < 4; ++j) {
         for (int i = 0; i < 4; ++i) {
-            c.v[i] += a->v[j] * b->vv[j][i];
+            c.v[i] += a.v[j] * b.vv[j][i];
         }
     }
     return c;
+}
+
+mat3 
+transpose3(mat3 m) {
+    mat3 t = {};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            t.vv[j][i] = m.vv[i][j];
+        }
+    }
+    return t;
+}
+
+mat4 
+transpose4(mat4 m) {
+    mat4 t = {};
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            t.vv[j][i] = m.vv[i][j];
+        }
+    }
+    return t;
 }

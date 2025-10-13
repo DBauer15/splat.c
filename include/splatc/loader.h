@@ -5,11 +5,14 @@
 
 typedef struct {
     long n_points;
-    long n_colors;
     vec3f* positions; 
     vec3f* colors; 
+    float* opacities;
+    mat3* cov3d
 } gsmodel;
 
+gsmodel*
+loader_gsmodel_from_splat(const char *fn);
 
 gsmodel*
 loader_gsmodel_from_sogs(const char *fn);
