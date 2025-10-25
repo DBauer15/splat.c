@@ -14,8 +14,12 @@
 #include <splatc/ppm.h>
 #include <splatc/rasterizer.h>
 
-#define WIDTH   640
-#define HEIGHT  360
+#ifndef M_PI
+#define M_PI 3.14159265359
+#endif
+
+#define WIDTH   1280
+#define HEIGHT  720
 
 #define TILESIZE 8
 
@@ -25,6 +29,10 @@
 #define INPUT_D (1<<3)
 #define INPUT_Q (1<<4)
 #define INPUT_E (1<<5)
+#define INPUT_I (1<<6)
+#define INPUT_J (1<<7)
+#define INPUT_K (1<<8)
+#define INPUT_L (1<<9)
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     uint32_t *input_state = (uint32_t*)glfwGetWindowUserPointer(window);
@@ -49,37 +57,64 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
     if (key == GLFW_KEY_E) {
         *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_E) : ((*input_state) & ~INPUT_E);
     }
+    if (key == GLFW_KEY_I) {
+        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_I) : ((*input_state) & ~INPUT_I);
+    }
+    if (key == GLFW_KEY_J) {
+        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_J) : ((*input_state) & ~INPUT_J);
+    }
+    if (key == GLFW_KEY_K) {
+        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_K) : ((*input_state) & ~INPUT_K);
+    }
+    if (key == GLFW_KEY_L) {
+        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_L) : ((*input_state) & ~INPUT_L);
+    }
 }
 
 void 
 update_view(camera *cam, uint32_t input_state) {
     float speed = 0.15f;
-    vec3f offset = {};
+    vec3f offset_pos = {};
+    vec2f offset_at = {};
+
     if (input_state & INPUT_W) {
-        offset.z = -speed;
+        offset_pos.z = -speed;
     }
     if (input_state & INPUT_S) {
-        offset.z = speed;
+        offset_pos.z = speed;
     }
     if (input_state & INPUT_D) {
-        offset.x = -speed;
+        offset_pos.x = -speed;
     }
     if (input_state & INPUT_A) {
-        offset.x = speed;
+        offset_pos.x = speed;
     }
     if (input_state & INPUT_Q) {
-        offset.y = -speed;
+        offset_pos.y = -speed;
     }
     if (input_state & INPUT_E) {
-        offset.y = speed;
+        offset_pos.y = speed;
+    }
+    if (input_state & INPUT_I) {
+        offset_at.y = -speed;
+    }
+    if (input_state & INPUT_K) {
+        offset_at.y = speed;
+    }
+    if (input_state & INPUT_L) {
+        offset_at.x = -speed;
+    }
+    if (input_state & INPUT_J) {
+        offset_at.x = speed;
     }
 
-    cam->pos.x += dot3(offset, cam->right);
-    cam->pos.y += dot3(offset, cam->up);
-    cam->pos.z += dot3(offset, cam->forward);
-    cam->at.x += dot3(offset, cam->right);
-    cam->at.y += dot3(offset, cam->up);
-    cam->at.z += dot3(offset, cam->forward);
+    vec3f dir = { sin(offset_at.x), 0.f, cos(offset_at.x) };
+    cam->pos.x += dot3(offset_pos, cam->right);
+    cam->pos.y += dot3(offset_pos, cam->up);
+    cam->pos.z += dot3(offset_pos, cam->forward);
+    cam->at.x += dot3(offset_pos, cam->right);
+    cam->at.y += dot3(offset_pos, cam->up);
+    cam->at.z += dot3(offset_pos, cam->forward);
 }
 
 

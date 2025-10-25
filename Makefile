@@ -1,7 +1,7 @@
-
 CC = gcc
-CCFLAGS = -Wall -Wextra -std=c99 -O3 -march=native -ffast-math -funroll-loops -pthread
+# CCFLAGS = -Wall -Wextra -std=c99 -O3 -march=native -ffast-math -funroll-loops -pthread
 # CCFLAGS = -Wall -Wextra -std=c99 -pthread -g
+CCFLAGS = -Wall -Wextra -std=c99 -pthread -O3
 CCLINKFLAGS = -L/opt/homebrew/opt/libomp/lib
 INC = -I/opt/homebrew/opt/libomp/include
 
@@ -19,9 +19,10 @@ INCLUDES = $(wildcard $(INCLUDEDIR)/**/*.h)
 INC += -I ./include 
 INC += -I $(HOME)/software/glfw-3.4.bin.MACOS/include
 INC += -I ./extern/rply
-CCLINKFLAGS += -L $(HOME)/software/glfw-3.4.bin.MACOS/lib-arm64
-CCLINKFLAGS += -lglfw3
-CCLINKFLAGS += -framework OpenGL -framework IOKit -framework Cocoa
+CCLINKFLAGS += -lGL -lglfw -lm
+# CCLINKFLAGS += -L $(HOME)/software/glfw-3.4.bin.MACOS/lib-arm64
+# CCLINKFLAGS += -lglfw3
+# CCLINKFLAGS += -framework OpenGL -framework IOKit -framework Cocoa
 
 all: $(TARGET)
 
@@ -34,7 +35,7 @@ $(BINDIR)/%.o: $(SRCDIR)/%.c $(INCLUDES)
 
 $(TARGET): $(BINDIR) $(OBJ)
 	$(CC) -o $@ $(OBJ) $(CCFLAGS) $(CCLINKFLAGS)
-	./bin/splat /Users/davidbauer/Downloads/Rose.ply
+	./bin/splat ~/Downloads/Rose.ply
 	# rm -f $(OBJ)
 
 clean:

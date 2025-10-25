@@ -8,7 +8,7 @@
 #include <splatc/loader.h>
 #include <splatc/threadpool.h>
 
-#define RASTERIZER_NUM_THREADS 16
+#define RASTERIZER_NUM_THREADS 12
 
 typedef struct {
     vec4f view;
@@ -64,8 +64,6 @@ compute_cov2d(const vec4f *mu_view, const mat4 *view, mat3 *cov_3d, float focal_
         mu_view->y,
         mu_view->z,
     };
-    // printf("zview: %.3f\n", t.z);
-
 
 	const float limx = 1.3f * tan_fovx;
 	const float limy = 1.3f * tan_fovy;
@@ -74,43 +72,21 @@ compute_cov2d(const vec4f *mu_view, const mat4 *view, mat3 *cov_3d, float focal_
 	t.x = fminf(limx, fmaxf(-limx, txtz)) * t.z;
 	t.y = fminf(limy, fmaxf(-limy, tytz)) * t.z;
 
-    // printf("focal_y: %.3f\n", fabs(t.y / (t.z*t.z)));
     mat3 J = { 
-        focal_x / t.z, 0.0f, -(focal_x * t.x) / (t.z * t.z),
-        0.0f, -focal_y / t.z, (focal_y * t.y) / (t.z * t.z),
-        0, 0, 0 };
+        focal_x / t.z,  0.f,            -(focal_x * t.x) / (t.z * t.z),
+        0.f,            focal_y / t.z,  -(focal_y * t.y) / (t.z * t.z),
+        0.f,            0.f,            0.f
+    };
 
-    // printf("J: %.3f, %.3f, %.3f\n", J.vv[0][0], J.vv[1][0], J.vv[2][0]);
-    // printf("J: %.3f, %.3f, %.3f\n", J.vv[0][1], J.vv[1][1], J.vv[2][1]);
-    // printf("J: %.3f, %.3f, %.3f\n\n", J.vv[0][2], J.vv[1][2], J.vv[2][2]);
-
-    // mat3 W = { 
-    //     view->vv[0][0], view->vv[0][1], view->vv[0][2],
-    //     view->vv[1][0], view->vv[1][1], view->vv[1][2],
-    //     view->vv[2][0], view->vv[2][1], view->vv[2][2] };
     mat3 W = { 
     view->vv[0][0], view->vv[1][0], view->vv[2][0],
     view->vv[0][1], view->vv[1][1], view->vv[2][1],
     view->vv[0][2], view->vv[1][2], view->vv[2][2] };
 
-	// mat3 T = matmul3(W, J);
 	mat3 T = matmul3(J, W);
+    mat3 Vrk = *cov_3d;
 
-    mat3 Vrk = { 
-        cov_3d->v[0], cov_3d->v[1], cov_3d->v[2],
-        cov_3d->v[1], cov_3d->v[3], cov_3d->v[4],
-        cov_3d->v[2], cov_3d->v[4], cov_3d->v[5] };
-
-    // printf("Vrk: %.3f, %.3f, %.3f\n", Vrk.vv[0][0], Vrk.vv[1][0], Vrk.vv[2][0]);
-    // printf("Vrk: %.3f, %.3f, %.3f\n", Vrk.vv[0][1], Vrk.vv[1][1], Vrk.vv[2][1]);
-    // printf("Vrk: %.3f, %.3f, %.3f\n\n", Vrk.vv[0][2], Vrk.vv[1][2], Vrk.vv[2][2]);
-
-    // mat3 cov = matmul3(transpose3(T), matmul3(transpose3(Vrk), T));
     mat3 cov = matmul3(T, matmul3(Vrk, transpose3(T)));
-
-    // printf("cov: %.3f, %.3f, %.3f\n", cov.vv[0][0], cov.vv[1][0], cov.vv[2][0]);
-    // printf("cov: %.3f, %.3f, %.3f\n", cov.vv[0][1], cov.vv[1][1], cov.vv[2][1]);
-    // printf("cov: %.3f, %.3f, %.3f\n\n", cov.vv[0][2], cov.vv[1][2], cov.vv[2][2]);
 
 	return (vec3f){ cov.vv[0][0], cov.vv[0][1], cov.vv[1][1] };
 }
@@ -214,6 +190,8 @@ rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame) {
             1.f
         };
         vec4f vview = matmulv4(view, vertex);
+        if (vview.z < 0.f)
+            continue;
         vec4f vproj = matmulv4(proj, vview);
 
         float rw = 1.f / (vproj.w + 1e-5f);
@@ -246,24 +224,19 @@ rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame) {
         size_t idx = ctx->trans_points[i].idx;
         vec4f vview = ctx->trans_points[i].view;
         vec3f cov = compute_cov2d(&vview, &view, &ctx->model->cov3d[idx], focal_x, focal_y, tan_fovx, tan_fovy);
-        // printf("%.3f, %.3f, %.3f\n", cov.x, cov.y, cov.z);
 
         const float h_var = 0.3f;
         const float det_cov = cov.x * cov.z - cov.y * cov.y;
         cov.x += h_var;
         cov.z += h_var;
         const float det_cov_plus_h_cov = cov.x * cov.z - cov.y * cov.y;
-
-        // Invert covariance (EWA algorithm)
         const float det = det_cov_plus_h_cov;
 
         if (det == 0.0f)
             continue;
 
         float det_inv = 1.f / det;
-        // printf("%.6f\n", det_inv);
         vec3f inv_cov2d = { cov.z * det_inv, -cov.y * det_inv, cov.x * det_inv };
-        // printf("%.6f, %.6f, %.6f\n\n", inv_cov2d.x, inv_cov2d.y, inv_cov2d.z);
 
         float mid = 0.5f * (cov.x + cov.z);
         float lambda1 = mid + sqrtf(fmaxf(0.1f, mid * mid - det));
@@ -319,7 +292,6 @@ render_kernel(void *args) {
 
     vec3f *throughputs = ctx->throughputs + (tile * ctx->tile_size.x * ctx->tile_size.y);
 
-    // vec3f *throughputs = malloc(ctx->tile_size.x * ctx->tile_size.y * sizeof(vec3f));
     for (size_t i = 0; i < ctx->tile_size.x * ctx->tile_size.y; ++i) {
         throughputs[i].x = 1.f;
         throughputs[i].y = 1.f;
@@ -339,20 +311,19 @@ render_kernel(void *args) {
         vec2f p = frame_ndc_to_screen(ctx->ndc_points[i], frame); 
 
         for (size_t y = y_start; y < y_end; ++y) {
-            // vec3f *row_colors = (frame->pixels + (frame->height-y-1)*frame->width);
             vec3f *row_colors = (frame->pixels + y*frame->width);
             for (size_t x = x_start; x < x_end; ++x) {
                 size_t tile_idx = (y-y_start) * ctx->tile_size.x + (x-x_start);
                 if (done[tile_idx]) continue;
 
                 vec2f pix = {(float) x, (float) y};
-
                 vec2f d = { p.x - pix.x, p.y - pix.y };
+
                 float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
                 if (power > 0.0f)
                     continue;
 
-                float alpha = fminf(0.99f, opacity * fastExp(power));
+                float alpha = fminf(0.99f, opacity * expf(power));
                 if (alpha < 0.004f) /* 1/255 ~= 0.004 */
                     continue;
 

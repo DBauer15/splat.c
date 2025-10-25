@@ -49,25 +49,17 @@ loader_nomalize_positions(gsmodel *model) {
 static void
 loader_compute_cov3d(ply_read_payload *payload, gsmodel *model) {
     for (size_t i = 0; i < model->n_points; ++i) {
-        // Create scaling matrix
         mat3 S = mat3_id();
         S.vv[0][0] = payload->scales[i].x;
         S.vv[1][1] = payload->scales[i].y;
         S.vv[2][2] = payload->scales[i].z;
 
-        // Normalize quaternion to get valid rotation
-        vec4f q = payload->rotations[i];// / length(rot);
-        // float r = q.x;
-        // float x = q.y;
-        // float y = q.z;
-        // float z = q.w;
+        vec4f q = payload->rotations[i];
+        float r = q.x;
+        float x = q.y;
+        float y = q.z;
+        float z = q.w;
 
-        float x = q.x;
-        float y = q.y;
-        float z = q.z;
-        float r = q.w;
-
-        // Compute rotation matrix from quaternion
         mat3 R = {
                 1.f - 2.f * (y * y + z * z), 2.f * (x * y - r * z), 2.f * (x * z + r * y),
                 2.f * (x * y + r * z), 1.f - 2.f * (x * x + z * z), 2.f * (y * z - r * x),
@@ -77,13 +69,7 @@ loader_compute_cov3d(ply_read_payload *payload, gsmodel *model) {
         mat3 M = matmul3(R, S);
         mat3 sigma = matmul3(M, transpose3(M));
 
-        // Covariance is symmetric, only store upper right
-        model->cov3d[i].v[0] = sigma.vv[0][0];
-        model->cov3d[i].v[1] = sigma.vv[0][1];
-        model->cov3d[i].v[2] = sigma.vv[0][2];
-        model->cov3d[i].v[3] = sigma.vv[1][1];
-        model->cov3d[i].v[4] = sigma.vv[1][2];
-        model->cov3d[i].v[5] = sigma.vv[2][2];
+        model->cov3d[i] = sigma;
     } 
 }
 
@@ -130,6 +116,7 @@ loader_gsmodel_debug() {
     model->colors[0] = (vec3f){1.f, 0.f, 0.f};
     model->opacities[0] = 1.f;
     model->cov3d[0] = mat3_id();
+    model->cov3d[0].vv[0][0] = 0.005f;
 
     printf("[loader] loaded debug model\n");
     return model;
