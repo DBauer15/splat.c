@@ -53,7 +53,10 @@ DOT_OP(2)
 DOT_OP(3)
 DOT_OP(4)
 
-SUB_OP(2)
+// SUB_OP(2)
+vec2f sub2(vec2f a, vec2f b) {
+    return (vec2f){ a.x - b.x, a.y - b.y };
+}
 SUB_OP(3)
 SUB_OP(4)
 
@@ -94,9 +97,9 @@ MAT_ID(4)
 mat3
 matmul3(mat3 b, mat3 a) {
     mat3 c = {};
-    for (int i = 0; i < 4; ++i) {
-        for (int k = 0; k < 4; ++k) {
-            for (int j = 0; j < 4; ++j) {
+    for (int i = 0; i < 3; ++i) {
+        for (int k = 0; k < 3; ++k) {
+            for (int j = 0; j < 3; ++j) {
                 c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
             }
         }

@@ -50,17 +50,22 @@ static void
 loader_compute_cov3d(ply_read_payload *payload, gsmodel *model) {
     for (size_t i = 0; i < model->n_points; ++i) {
         // Create scaling matrix
-        mat3 S = {};
+        mat3 S = mat3_id();
         S.vv[0][0] = payload->scales[i].x;
         S.vv[1][1] = payload->scales[i].y;
         S.vv[2][2] = payload->scales[i].z;
 
         // Normalize quaternion to get valid rotation
         vec4f q = payload->rotations[i];// / length(rot);
-        float r = q.x;
-        float x = q.y;
-        float y = q.z;
-        float z = q.w;
+        // float r = q.x;
+        // float x = q.y;
+        // float y = q.z;
+        // float z = q.w;
+
+        float x = q.x;
+        float y = q.y;
+        float z = q.z;
+        float r = q.w;
 
         // Compute rotation matrix from quaternion
         mat3 R = {
@@ -69,10 +74,8 @@ loader_compute_cov3d(ply_read_payload *payload, gsmodel *model) {
                 2.f * (x * z - r * y), 2.f * (y * z + r * x), 1.f - 2.f * (x * x + y * y)
         };
 
-        mat3 M = matmul3(S, R);
-
-        // Compute 3D world covariance matrix Sigma
-        mat3 sigma = matmul3(transpose3(M), M);
+        mat3 M = matmul3(R, S);
+        mat3 sigma = matmul3(M, transpose3(M));
 
         // Covariance is symmetric, only store upper right
         model->cov3d[i].v[0] = sigma.vv[0][0];
@@ -110,6 +113,26 @@ loader_ply_read_callback(p_ply_argument arg) {
     }
 
     return 1;
+}
+
+gsmodel*
+loader_gsmodel_debug() {
+
+    gsmodel* model = calloc(1, sizeof(gsmodel));
+
+    model->positions = calloc(1, sizeof(vec3f));
+    model->colors = calloc(1, sizeof(vec3f));
+    model->opacities = calloc(1, sizeof(float));
+    model->cov3d = calloc(1, sizeof(mat3));
+    model->n_points = 1;
+
+    model->positions[0] = (vec3f){0.f, 0.f, 0.f};
+    model->colors[0] = (vec3f){1.f, 0.f, 0.f};
+    model->opacities[0] = 1.f;
+    model->cov3d[0] = mat3_id();
+
+    printf("[loader] loaded debug model\n");
+    return model;
 }
 
 gsmodel*

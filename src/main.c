@@ -14,10 +14,10 @@
 #include <splatc/ppm.h>
 #include <splatc/rasterizer.h>
 
-#define WIDTH   400
-#define HEIGHT  300
+#define WIDTH   640
+#define HEIGHT  360
 
-#define TILESIZE 32
+#define TILESIZE 8
 
 #define INPUT_W (1<<0)
 #define INPUT_A (1<<1)
@@ -53,13 +53,13 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 
 void 
 update_view(camera *cam, uint32_t input_state) {
-    float speed = 0.05f;
+    float speed = 0.15f;
     vec3f offset = {};
     if (input_state & INPUT_W) {
-        offset.z = speed;
+        offset.z = -speed;
     }
     if (input_state & INPUT_S) {
-        offset.z = -speed;
+        offset.z = speed;
     }
     if (input_state & INPUT_D) {
         offset.x = -speed;
@@ -96,11 +96,8 @@ main(int ac, const char** av) {
 
     /* load gsmodel */
     gsmodel *model = loader_gsmodel_from_ply(av[1]);
+    // gsmodel *model = loader_gsmodel_debug();
     if (!model) return -1;
-    // vec3f* ndc_points = calloc(model->n_points, sizeof(vec3f));
-    vec2f l = {-1.f, -1.f};
-    vec2f u = {1.f, 1.f};
-    raster_ctx *ctx = rasterizer_context_create(model, l, u);
 
     /* create window */
     GLFWwindow* window;
@@ -121,6 +118,7 @@ main(int ac, const char** av) {
 
     /* Make the window's context current */
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
 
     /* set key callback */
     glfwSetKeyCallback(window, key_callback);
@@ -133,17 +131,21 @@ main(int ac, const char** av) {
 
     /* set up camera */
     camera cam = {};
-    cam.pos = (vec3f){ 0.f, 0.f, -1.f };
+    cam.pos = (vec3f){ 0.0f, 0.0f, -10.f };
     cam.at = (vec3f){ 0.f, 0.f, 0.f };
     cam.up = (vec3f){ 0.f, 1.f, 0.f };
     cam.fovy = 0.35 * M_PI;
-    cam.near = 0.0001f;
+    cam.near = 0.1f;
     cam.far = 100.f;
     cam.aspect = (float)frame_width / frame_height;
     glfwSetWindowUserPointer(window, &input_state);
 
     /* Render image */
-    frame *image = rasterizer_frame_create(frame_width, frame_height, 3);
+    frame *image = rasterizer_frame_create(frame_width, frame_height);
+
+    /* Create rasterizer context */
+    vec2u tile_size = { TILESIZE, TILESIZE };
+    raster_ctx *ctx = rasterizer_context_create(model, image, tile_size);
 
     size_t frame_no = 0;    
     clock_t start, end, frame_start, frame_end;
@@ -164,19 +166,8 @@ main(int ac, const char** av) {
         /* Draw frame */
         start = clock();
         rasterizer_frame_clear(image);
-        float tilefracx = 2.f * (float)TILESIZE / frame_width;
-        float tilefracy = 2.f * (float)TILESIZE / frame_height;
-        for (int i = 0; i < (frame_width+TILESIZE-1) / TILESIZE; ++i) {
-            for (int j = 0; j < (frame_height+TILESIZE-1) / TILESIZE; ++j) {
-                vec2f tl = { -1.f + i * tilefracx, -1.f + j * tilefracy };
-                vec2f tu = { -1.f + (i+1) * tilefracx, -1.f + (j+1) * tilefracy };
-
-                rasterizer_set_tile(ctx, tl, tu);
-                rasterizer_mark_visible(ctx, &cam);
-                rasterizer_render(ctx, &cam, image);
-            }
-        }
-        glDrawPixels(image->width, image->height, GL_RGB, GL_UNSIGNED_BYTE, image->pixels);
+        rasterizer_render(ctx, &cam, image);
+        glDrawPixels(image->width, image->height, GL_RGB, GL_FLOAT, image->pixels);
         end = clock();
         render_time = ((double)(end - start)) / CLOCKS_PER_SEC;
 

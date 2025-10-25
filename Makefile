@@ -1,6 +1,7 @@
 
 CC = gcc
-CCFLAGS = -Wall -Wextra -O3 -std=c99
+CCFLAGS = -Wall -Wextra -std=c99 -O3 -march=native -ffast-math -funroll-loops -pthread
+# CCFLAGS = -Wall -Wextra -std=c99 -pthread -g
 CCLINKFLAGS = -L/opt/homebrew/opt/libomp/lib
 INC = -I/opt/homebrew/opt/libomp/include
 
@@ -33,7 +34,8 @@ $(BINDIR)/%.o: $(SRCDIR)/%.c $(INCLUDES)
 
 $(TARGET): $(BINDIR) $(OBJ)
 	$(CC) -o $@ $(OBJ) $(CCFLAGS) $(CCLINKFLAGS)
-	rm -f $(OBJ)
+	./bin/splat /Users/davidbauer/Downloads/Rose.ply
+	# rm -f $(OBJ)
 
 clean:
 	rm -f $(TARGET) $(OBJ)

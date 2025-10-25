@@ -1,8 +1,17 @@
 #ifndef LINALG_H
 #define LINALG_H
 
+#include <stdint.h>
 
 /* type definitions */
+typedef union {
+    uint32_t v[2];
+    struct { 
+        uint32_t x, y;
+    };
+
+} vec2u;
+
 typedef union {
     float v[2];
     struct { 
