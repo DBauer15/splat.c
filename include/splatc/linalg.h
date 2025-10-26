@@ -5,45 +5,45 @@
 
 /* type definitions */
 typedef union {
-    uint32_t v[2];
-    struct { 
-        uint32_t x, y;
-    };
+  uint32_t v[2];
+  struct {
+    uint32_t x, y;
+  };
 
 } vec2u;
 
 typedef union {
-    float v[2];
-    struct { 
-        float x, y;
-    };
+  float v[2];
+  struct {
+    float x, y;
+  };
 
 } vec2f;
 
 typedef union {
-    float v[3];
-    struct { 
-        float x, y, z;
-    };
+  float v[3];
+  struct {
+    float x, y, z;
+  };
 
 } vec3f;
 
 typedef union {
-    float v[4];
-    struct { 
-        float x, y, z, w;
-    };
+  float v[4];
+  struct {
+    float x, y, z, w;
+  };
 
 } vec4f;
 
 typedef union {
-    float v[9];
-    float vv[3][3];
+  float v[9];
+  float vv[3][3];
 } mat3;
 
 typedef union {
-    float v[16];
-    float vv[4][4];
+  float v[16];
+  float vv[4][4];
 } mat4;
 /* end type definitions */
 
@@ -70,7 +70,6 @@ vec4f norm4(vec4f a);
 
 vec3f cross3(vec3f a, vec3f b);
 /* end vector ops */
-
 
 /* matrix ops */
 mat3 mat3_id();

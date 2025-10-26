@@ -1,61 +1,61 @@
+#include <math.h>
 #include <splatc/linalg.h>
 #include <string.h>
-#include <math.h>
 
-#define NORM_OP(N) \
-    vec##N##f norm##N (vec##N##f a) {   \
-        vec##N##f result;                           \
-        float mag = sqrtf(dot##N (a, a));           \
-        for (int i = 0; i < N; ++i) {               \
-            result.v[i] = a.v[i] / mag;             \
-        }                                           \
-        return result;                              \
-    }
+#define NORM_OP(N)                   \
+  vec##N##f norm##N(vec##N##f a) {   \
+    vec##N##f result;                \
+    float mag = sqrtf(dot##N(a, a)); \
+    for (int i = 0; i < N; ++i) {    \
+      result.v[i] = a.v[i] / mag;    \
+    }                                \
+    return result;                   \
+  }
 
-#define DOT_OP(N) \
-    float dot##N (vec##N##f a, vec##N##f b) {   \
-        float result = 0.f;                     \
-        for (int i = 0; i < N; ++i) {           \
-            result += a.v[i] * b.v[i];          \
-        }                                       \
-        return result;                          \
-    }
+#define DOT_OP(N)                          \
+  float dot##N(vec##N##f a, vec##N##f b) { \
+    float result = 0.f;                    \
+    for (int i = 0; i < N; ++i) {          \
+      result += a.v[i] * b.v[i];           \
+    }                                      \
+    return result;                         \
+  }
 
-#define ADD_OP(N) \
-    vec##N##f add##N (vec##N##f a, vec##N##f b) {   \
-        vec##N##f result;                           \
-        for (int i = 0; i < N; ++i) {               \
-            result.v[i] = a.v[i] + b.v[i];          \
-        }                                           \
-        return result;                              \
-    }
+#define ADD_OP(N)                              \
+  vec##N##f add##N(vec##N##f a, vec##N##f b) { \
+    vec##N##f result;                          \
+    for (int i = 0; i < N; ++i) {              \
+      result.v[i] = a.v[i] + b.v[i];           \
+    }                                          \
+    return result;                             \
+  }
 
-#define SUB_OP(N) \
-    vec##N##f sub##N (vec##N##f a, vec##N##f b) {   \
-        vec##N##f result;                           \
-        for (int i = 0; i < N; ++i) {               \
-            result.v[i] = a.v[i] - b.v[i];          \
-        }                                           \
-        return result;                              \
-    }
+#define SUB_OP(N)                              \
+  vec##N##f sub##N(vec##N##f a, vec##N##f b) { \
+    vec##N##f result;                          \
+    for (int i = 0; i < N; ++i) {              \
+      result.v[i] = a.v[i] - b.v[i];           \
+    }                                          \
+    return result;                             \
+  }
 
-#define MUL_OP(N) \
-    vec##N##f mul##N (vec##N##f a, vec##N##f b) {   \
-        vec##N##f result;                           \
-        for (int i = 0; i < N; ++i) {               \
-            result.v[i] = a.v[i] * b.v[i];          \
-        }                                           \
-        return result;                              \
-    }
-
+#define MUL_OP(N)                              \
+  vec##N##f mul##N(vec##N##f a, vec##N##f b) { \
+    vec##N##f result;                          \
+    for (int i = 0; i < N; ++i) {              \
+      result.v[i] = a.v[i] * b.v[i];           \
+    }                                          \
+    return result;                             \
+  }
 
 DOT_OP(2)
 DOT_OP(3)
 DOT_OP(4)
 
 // SUB_OP(2)
-vec2f sub2(vec2f a, vec2f b) {
-    return (vec2f){ a.x - b.x, a.y - b.y };
+vec2f
+sub2(vec2f a, vec2f b) {
+  return (vec2f){a.x - b.x, a.y - b.y};
 }
 SUB_OP(3)
 SUB_OP(4)
@@ -74,92 +74,91 @@ NORM_OP(4)
 
 vec3f
 cross3(vec3f a, vec3f b) {
-    return (vec3f){
-        a.v[1] * b.v[2] - a.v[2] * b.v[1],
-        a.v[2] * b.v[0] - a.v[0] * b.v[2],
-        a.v[0] * b.v[1] - a.v[1] * b.v[0],
-    };
+  return (vec3f){
+      a.v[1] * b.v[2] - a.v[2] * b.v[1],
+      a.v[2] * b.v[0] - a.v[0] * b.v[2],
+      a.v[0] * b.v[1] - a.v[1] * b.v[0],
+  };
 }
 
-#define MAT_ID(N) \
-    mat ## N                     \
-    mat ## N ## _id() {          \
-        mat ## N a = {};         \
-        for (int i = 0; i < N; ++i) {   \
-            a.vv[i][i] = 1.f;         \
-        }                               \
-        return a;                       \
-    }
+#define MAT_ID(N)                 \
+  mat##N mat##N##_id() {          \
+    mat##N a = {};                \
+    for (int i = 0; i < N; ++i) { \
+      a.vv[i][i] = 1.f;           \
+    }                             \
+    return a;                     \
+  }
 
 MAT_ID(3)
 MAT_ID(4)
 
 mat3
 matmul3(mat3 b, mat3 a) {
-    mat3 c = {};
-    for (int i = 0; i < 3; ++i) {
-        for (int k = 0; k < 3; ++k) {
-            for (int j = 0; j < 3; ++j) {
-                c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
-            }
-        }
+  mat3 c = {};
+  for (int i = 0; i < 3; ++i) {
+    for (int k = 0; k < 3; ++k) {
+      for (int j = 0; j < 3; ++j) {
+        c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
+      }
     }
-    return c;
+  }
+  return c;
 }
 
 mat4
 matmul4(mat4 b, mat4 a) {
-    mat4 c = {};
-    for (int i = 0; i < 4; ++i) {
-        for (int k = 0; k < 4; ++k) {
-            for (int j = 0; j < 4; ++j) {
-                c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
-            }
-        }
+  mat4 c = {};
+  for (int i = 0; i < 4; ++i) {
+    for (int k = 0; k < 4; ++k) {
+      for (int j = 0; j < 4; ++j) {
+        c.vv[i][j] += b.vv[i][k] * a.vv[k][j];
+      }
     }
-    return c;
+  }
+  return c;
 }
 
 vec3f
 matmulv3(mat4 b, vec3f a) {
-    vec3f c = {};
-    for (int j = 0; j < 4; ++j) {
-        for (int i = 0; i < 3; ++i) {
-            c.v[i] += (j == 3 ? 1.f : a.v[j]) * b.vv[j][i];
-        }
+  vec3f c = {};
+  for (int j = 0; j < 4; ++j) {
+    for (int i = 0; i < 3; ++i) {
+      c.v[i] += (j == 3 ? 1.f : a.v[j]) * b.vv[j][i];
     }
-    return c;
+  }
+  return c;
 }
 
 vec4f
 matmulv4(mat4 b, vec4f a) {
-    vec4f c = {};
-    for (int j = 0; j < 4; ++j) {
-        for (int i = 0; i < 4; ++i) {
-            c.v[i] += a.v[j] * b.vv[j][i];
-        }
-    }
-    return c;
-}
-
-mat3 
-transpose3(mat3 m) {
-    mat3 t = {};
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            t.vv[j][i] = m.vv[i][j];
-        }
-    }
-    return t;
-}
-
-mat4 
-transpose4(mat4 m) {
-    mat4 t = {};
+  vec4f c = {};
+  for (int j = 0; j < 4; ++j) {
     for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            t.vv[j][i] = m.vv[i][j];
-        }
+      c.v[i] += a.v[j] * b.vv[j][i];
     }
-    return t;
+  }
+  return c;
+}
+
+mat3
+transpose3(mat3 m) {
+  mat3 t = {};
+  for (int i = 0; i < 3; ++i) {
+    for (int j = 0; j < 3; ++j) {
+      t.vv[j][i] = m.vv[i][j];
+    }
+  }
+  return t;
+}
+
+mat4
+transpose4(mat4 m) {
+  mat4 t = {};
+  for (int i = 0; i < 4; ++i) {
+    for (int j = 0; j < 4; ++j) {
+      t.vv[j][i] = m.vv[i][j];
+    }
+  }
+  return t;
 }
