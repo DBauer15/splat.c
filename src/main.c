@@ -18,64 +18,93 @@
 #define M_PI 3.14159265359
 #endif
 
-#define WIDTH   1280
-#define HEIGHT  720
+#define WIDTH   640
+#define HEIGHT  360
 
 #define TILESIZE 8
 
-#define INPUT_W (1<<0)
-#define INPUT_A (1<<1)
-#define INPUT_S (1<<2)
-#define INPUT_D (1<<3)
-#define INPUT_Q (1<<4)
-#define INPUT_E (1<<5)
-#define INPUT_I (1<<6)
-#define INPUT_J (1<<7)
-#define INPUT_K (1<<8)
-#define INPUT_L (1<<9)
+typedef enum {
+    INPUT_W = (1<<0),
+    INPUT_A = (1<<1),
+    INPUT_S = (1<<2),
+    INPUT_D = (1<<3),
+    INPUT_Q = (1<<4),
+    INPUT_E = (1<<5),
+    INPUT_MB0 = (1<<30),
+    INPUT_MB1 = (1<<31),
+} key_state;
+
+typedef struct {
+    uint32_t key_input;
+    uint32_t mouse_input;
+    double mouse_x, mouse_y;
+} window_state;
+
+void size_callback(GLFWwindow *window, int width, int height) {
+    glPixelZoom((float)width / WIDTH, (float)height / HEIGHT);
+}
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    uint32_t *input_state = (uint32_t*)glfwGetWindowUserPointer(window);
-    if(!input_state) return;
-    if(action != GLFW_PRESS && action != GLFW_RELEASE) return;
+    window_state *ws = (window_state*) glfwGetWindowUserPointer(window);
+    if(!ws) return;
 
-    if (key == GLFW_KEY_W) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_W) : ((*input_state) & ~INPUT_W);
+    if(action != GLFW_PRESS && action != GLFW_RELEASE) return;
+    switch(key) {
+        case GLFW_KEY_W:
+            ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_W) : (ws->key_input & ~INPUT_W);
+        break;
+        case GLFW_KEY_S:
+            ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_S) : (ws->key_input & ~INPUT_S);
+        break;
+        case GLFW_KEY_A:
+            ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_A) : (ws->key_input & ~INPUT_A);
+        break;
+        case GLFW_KEY_D:
+            ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_D) : (ws->key_input & ~INPUT_D);
+        break;
+        case GLFW_KEY_Q:
+            ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_Q) : (ws->key_input & ~INPUT_Q);
+        break;
+        case GLFW_KEY_E:
+            ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_E) : (ws->key_input & ~INPUT_E);
+        break;
     }
-    if (key == GLFW_KEY_S) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_S) : ((*input_state) & ~INPUT_S);
+}
+
+static void mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
+    window_state *ws = (window_state*) glfwGetWindowUserPointer(window);
+    if(!ws) return;
+
+    if(action != GLFW_PRESS && action != GLFW_RELEASE) return;
+    switch(button) {
+        case GLFW_MOUSE_BUTTON_LEFT:
+            ws->mouse_input = action == GLFW_PRESS ? (ws->mouse_input | INPUT_MB0) : (ws->mouse_input & ~INPUT_MB0);
+            break;
+        case GLFW_MOUSE_BUTTON_RIGHT:
+            ws->mouse_input = action == GLFW_PRESS ? (ws->mouse_input | INPUT_MB1) : (ws->mouse_input & ~INPUT_MB1);
+            break;
     }
-    if (key == GLFW_KEY_A) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_A) : ((*input_state) & ~INPUT_A);
-    }
-    if (key == GLFW_KEY_D) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_D) : ((*input_state) & ~INPUT_D);
-    }
-    if (key == GLFW_KEY_Q) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_Q) : ((*input_state) & ~INPUT_Q);
-    }
-    if (key == GLFW_KEY_E) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_E) : ((*input_state) & ~INPUT_E);
-    }
-    if (key == GLFW_KEY_I) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_I) : ((*input_state) & ~INPUT_I);
-    }
-    if (key == GLFW_KEY_J) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_J) : ((*input_state) & ~INPUT_J);
-    }
-    if (key == GLFW_KEY_K) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_K) : ((*input_state) & ~INPUT_K);
-    }
-    if (key == GLFW_KEY_L) {
-        *input_state = action == GLFW_PRESS ? ((*input_state) | INPUT_L) : ((*input_state) & ~INPUT_L);
-    }
+}
+
+static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
+{
+    window_state *ws = (window_state*)glfwGetWindowUserPointer(window);
+    if(!ws) return;
+
+    double prev_mouse_x = ws->mouse_x;
+    double prev_mouse_y = ws->mouse_y;
+
+    double dx = xpos - prev_mouse_x;
+    double dy = ypos - prev_mouse_y;
+
+    ws->mouse_x = xpos;
+    ws->mouse_y = ypos;
 }
 
 void 
 update_view(camera *cam, uint32_t input_state) {
     float speed = 0.15f;
     vec3f offset_pos = {};
-    vec2f offset_at = {};
 
     if (input_state & INPUT_W) {
         offset_pos.z = -speed;
@@ -95,20 +124,7 @@ update_view(camera *cam, uint32_t input_state) {
     if (input_state & INPUT_E) {
         offset_pos.y = speed;
     }
-    if (input_state & INPUT_I) {
-        offset_at.y = -speed;
-    }
-    if (input_state & INPUT_K) {
-        offset_at.y = speed;
-    }
-    if (input_state & INPUT_L) {
-        offset_at.x = -speed;
-    }
-    if (input_state & INPUT_J) {
-        offset_at.x = speed;
-    }
 
-    vec3f dir = { sin(offset_at.x), 0.f, cos(offset_at.x) };
     cam->pos.x += dot3(offset_pos, cam->right);
     cam->pos.y += dot3(offset_pos, cam->up);
     cam->pos.z += dot3(offset_pos, cam->forward);
@@ -155,8 +171,11 @@ main(int ac, const char** av) {
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
-    /* set key callback */
+    /* set callbacks */
     glfwSetKeyCallback(window, key_callback);
+    glfwSetWindowSizeCallback(window, size_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
 
     int frame_width, frame_height;
     glfwGetFramebufferSize(window, &frame_width, &frame_height);

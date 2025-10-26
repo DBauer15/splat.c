@@ -8,7 +8,12 @@
 #include <splatc/loader.h>
 #include <splatc/threadpool.h>
 
-#define RASTERIZER_NUM_THREADS 12
+#define RASTERIZER_NUM_THREADS 16
+#define RASTERIZER_TILE_BATCH_SIZE 8
+
+#define LOG2E 1.4426950408889634f
+
+struct render_kernel_args;
 
 typedef struct {
     vec4f view;
@@ -33,24 +38,18 @@ struct raster_ctx_t {
 
     /* threading */
     tpool *tpool;
+    size_t n_tile_batches;
+    struct render_kernel_args *rargs;
 };
 
-typedef struct {
+typedef struct render_kernel_args {
     raster_ctx *ctx;
     camera *camera;
     frame *frame;
     size_t tile;
-} render_kernel_args;
-
-static float fastExp(float x)
-{
-    const float a = 12102203.1713380122;
-    const float b = 1064986823.010287616;
-    x = a * x + b;
-    uint32_t n = (uint32_t)(x);
-    memcpy(&x, &n, 4);
-    return x;
-}
+    size_t tile_start;
+    size_t tile_end;
+} render_batch_args;
 
 static vec2f
 frame_ndc_to_screen(vec4f p, frame *frame) {
@@ -159,6 +158,11 @@ rasterizer_context_create(gsmodel* model, frame *frame, vec2u tile_size) {
     tpool *tpool = tpool_create(RASTERIZER_NUM_THREADS);
     ctx->tpool = tpool;
 
+    ctx->n_tile_batches = ((ctx->n_tiles.x * ctx->n_tiles.y) + RASTERIZER_TILE_BATCH_SIZE-1) / RASTERIZER_TILE_BATCH_SIZE;
+    // render_batch_args *rargs = calloc(ctx->n_tile_batches, sizeof(render_batch_args));
+    render_batch_args *rargs = calloc(ctx->n_tiles.x * ctx->n_tiles.y, sizeof(render_batch_args));
+    ctx->rargs = rargs;
+
     return ctx;
 
 }
@@ -195,9 +199,6 @@ rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame) {
         vec4f vproj = matmulv4(proj, vview);
 
         float rw = 1.f / (vproj.w + 1e-5f);
-        // ctx->ndc_points[i].v[0] = 0.5f + (vproj.x * rw) * 0.5f;
-        // ctx->ndc_points[i].v[1] = 0.5f + (vproj.y * rw) * 0.5f;
-        // ctx->ndc_points[i].v[2] = 0.5f + (vproj.z * rw) * 0.5f;
         ctx->ndc_points[i].v[0] = (vproj.x * rw);
         ctx->ndc_points[i].v[1] = (vproj.y * rw);
         ctx->ndc_points[i].v[2] = (vproj.z * rw);
@@ -269,12 +270,14 @@ rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame) {
 
         ctx->inv_cov2d[idx] = inv_cov2d;
         ctx->radii[idx] = radius;
+        ctx->ndc_points[idx].x = point_screen.x;
+        ctx->ndc_points[idx].y = point_screen.y;
     }
 }
 
 static void 
 render_kernel(void *args) {
-    render_kernel_args *rargs = (render_kernel_args*)args;
+    render_batch_args *rargs = (render_batch_args*)args;
     raster_ctx *ctx = rargs->ctx;
     camera *camera = rargs->camera;
     frame *frame = rargs->frame;
@@ -286,6 +289,10 @@ render_kernel(void *args) {
     size_t y_start = (tile / ctx->n_tiles.x) * ctx->tile_size.y;
     size_t x_end = x_start + ctx->tile_size.x;
     size_t y_end = y_start + ctx->tile_size.y;
+    if (x_end > frame->width)
+        x_end = frame->width;
+    if (y_end > frame->height)
+        y_end = frame->height;
 
     size_t *visible = ctx->visible + (tile * ctx->model->n_points);
     size_t itercnt = ctx->n_visible[tile];
@@ -302,13 +309,13 @@ render_kernel(void *args) {
     size_t n_done = 0;
 
     for (size_t z = 0; z < itercnt; ++z) {
-        if (n_done == ctx->tile_size.x * ctx->tile_size.y) break;
+        // if (n_done == ctx->tile_size.x * ctx->tile_size.y) break;
         size_t i = visible[z];
         vec3f color = ctx->model->colors[i];
         float opacity = ctx->model->opacities[i];
         vec3f con_o = ctx->inv_cov2d[i];
-        // vec2f p = ctx->trans_points[z].frame;
-        vec2f p = frame_ndc_to_screen(ctx->ndc_points[i], frame); 
+        float radius = ctx->radii[i];
+        vec2f p = {ctx->ndc_points[i].x, ctx->ndc_points[i].y};
 
         for (size_t y = y_start; y < y_end; ++y) {
             vec3f *row_colors = (frame->pixels + y*frame->width);
@@ -318,17 +325,26 @@ render_kernel(void *args) {
 
                 vec2f pix = {(float) x, (float) y};
                 vec2f d = { p.x - pix.x, p.y - pix.y };
+                if (fabsf(d.x) > radius || fabsf(d.y) > radius)
+                    continue;
 
                 float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) - con_o.y * d.x * d.y;
                 if (power > 0.0f)
                     continue;
 
-                float alpha = fminf(0.99f, opacity * expf(power));
+                // float alpha = fminf(0.99f, opacity * fastExp(power));
+                float alpha = fminf(0.99f, opacity * exp2f(power * LOG2E));
+                // float alpha = fminf(0.99f, opacity * expf(power));
                 if (alpha < 0.004f) /* 1/255 ~= 0.004 */
                     continue;
 
-                vec3f o3 = {alpha, alpha, alpha};
-                row_colors[x] = add3(row_colors[x], mul3(throughputs[tile_idx], mul3(color, o3)));
+                vec3f co = { 
+                    row_colors[x].x + color.x * alpha * throughputs[tile_idx].x, 
+                    row_colors[x].y + color.y * alpha * throughputs[tile_idx].y,  
+                    row_colors[x].z + color.z * alpha * throughputs[tile_idx].z
+                };
+
+                row_colors[x] = co;
                 throughputs[tile_idx].x *= (1.f - alpha);
                 throughputs[tile_idx].y *= (1.f - alpha);
                 throughputs[tile_idx].z *= (1.f - alpha);
@@ -344,19 +360,26 @@ render_kernel(void *args) {
     free(done);
 }
 
+static void
+render_batch(void *args) {
+    render_batch_args *rargs = (render_batch_args*)args;
+    for (size_t i = rargs->tile_start; i < rargs->tile_end; ++i) {
+        if (i >= rargs->ctx->n_tiles.x * rargs->ctx->n_tiles.y) break;
+
+        rargs->tile = i;
+        render_kernel(rargs);
+    }
+}
+
 void
 rasterizer_render(raster_ctx *ctx, camera *camera, frame *frame) {
-    size_t n_tiles = rasterizer_get_n_tiles(ctx);
-    render_kernel_args *args = malloc(n_tiles * sizeof(render_kernel_args));
-    for (size_t i = 0; i < n_tiles; ++i) {
-        args[i] = (render_kernel_args){
-            ctx, camera, frame, i
+    for (size_t b = 0; b < ctx->n_tile_batches; ++b) {
+        ctx->rargs[b] = (render_batch_args){
+            ctx, camera, frame, 0, b * RASTERIZER_TILE_BATCH_SIZE, (b+1) * RASTERIZER_TILE_BATCH_SIZE
         };
-        tpool_add_work(ctx->tpool, render_kernel, &args[i]);
+        tpool_add_work(ctx->tpool, render_batch, &ctx->rargs[b]);
     }
     tpool_wait(ctx->tpool);
-
-    free(args);
 }
 
 
@@ -378,6 +401,7 @@ rasterizer_context_destroy(raster_ctx *ctx) {
         free(ctx->radii);
         free(ctx->inv_cov2d);
         free(ctx->throughputs);
+        free(ctx->rargs);
         tpool_destroy(ctx->tpool);
     }
     free(ctx);
