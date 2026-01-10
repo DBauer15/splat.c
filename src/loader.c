@@ -74,7 +74,7 @@ static int
 loader_ply_read_callback(p_ply_argument arg) {
   long dim = -1;
   ply_read_payload* payload = NULL;
-  if (!ply_get_argument_user_data(arg, &payload, &dim)) return 0;
+  if (!ply_get_argument_user_data(arg, (void**)&payload, &dim)) return 0;
   if (!payload) return 0;
 
   gsmodel* model = payload->model;

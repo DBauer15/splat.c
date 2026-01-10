@@ -16,8 +16,8 @@
 #define M_PI 3.14159265359
 #endif
 
-#define WIDTH 1280
-#define HEIGHT 720
+#define WIDTH 1920
+#define HEIGHT 1080
 
 #define TILESIZE 8
 
@@ -28,12 +28,14 @@ typedef enum {
   INPUT_D = (1 << 3),
   INPUT_Q = (1 << 4),
   INPUT_E = (1 << 5),
+  INPUT_C = (1 << 6),
   INPUT_MB0 = (1 << 16),
   INPUT_MB1 = (1 << 17),
 } key_state;
 
 typedef struct {
   uint32_t key_input;
+  uint32_t key_input_pressed;
   uint32_t mouse_input;
   double mouse_x, mouse_y;
 } window_state;
@@ -47,6 +49,8 @@ void
 key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
   window_state *ws = (window_state *)glfwGetWindowUserPointer(window);
   if (!ws) return;
+
+  uint32_t prev_key_input = ws->key_input;
 
   if (action != GLFW_PRESS && action != GLFW_RELEASE) return;
   switch (key) {
@@ -74,7 +78,14 @@ key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
       ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_E)
                                            : (ws->key_input & ~INPUT_E);
       break;
+    case GLFW_KEY_C:
+      ws->key_input = action == GLFW_PRESS ? (ws->key_input | INPUT_C)
+                                           : (ws->key_input & ~INPUT_C);
+      break;
   }
+
+  ws->key_input_pressed = ws->key_input & (~prev_key_input);
+
 }
 
 static void
@@ -144,7 +155,7 @@ update_view(camera *cam, window_state *ws) {
 
 void
 image_save(frame *frame) {
-  ppm_write(frame->pixels, WIDTH, HEIGHT, "render.ppm");
+  ppm_write((float*)frame->pixels, WIDTH, HEIGHT, "render.ppm");
 }
 
 int
@@ -247,6 +258,12 @@ main(int ac, const char **av) {
     }
 
     frame_no = (frame_no + 1) % 1200;
+
+    /* Capture Screenshot if requested */ 
+    if (window_state.key_input_pressed & INPUT_C) {
+        image_save(image);
+        printf("Saving screenshot...");
+    }
   }
 
   glfwTerminate();

@@ -130,6 +130,7 @@ rasterizer_context_create(gsmodel *model, frame *frame, vec2u tile_size) {
                          (frame->height + tile_size.y - 1) / tile_size.y};
   ctx->tile_size = tile_size;
 
+  // TODO: Find a more memory-friendly way of tagging visiblity. This will crash large scenes.
   size_t *visible =
       calloc(model->n_points * ctx->n_tiles.x * ctx->n_tiles.y, sizeof(size_t));
   ctx->visible = visible;
