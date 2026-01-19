@@ -8,11 +8,21 @@
 #include <string.h>
 
 #define RASTERIZER_NUM_THREADS 16
-#define RASTERIZER_TILE_BATCH_SIZE 8
+#define RASTERIZER_TILE_BATCH_SIZE 32
 
 #define LOG2E 1.4426950408889634f
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+#define MAX(x, y) ((x) > (y) ? (x) : (y))
+
+#define AVG_TILES_TOUCHED_HEURISTIC \
+  45 /* used to preallocate memory for visibility buffer */
 
 struct render_kernel_args;
+
+typedef struct {
+  vec2u lower;
+  vec2u upper;
+} tile_range;
 
 typedef struct {
   vec4f view;
@@ -27,8 +37,10 @@ struct raster_ctx_t {
   /* rendering */
   transformed_point *trans_points;
   vec4f *ndc_points;
-  size_t *visible;
-  size_t *n_visible;
+  tile_range *tile_ranges;
+  uint32_t *visibility_tile_counts;
+  uint32_t *visibility_tile_offsets;
+  uint32_t *visibility_tile_points;
   float *radii;
   vec3f *inv_cov2d;
   vec2u tile_size;
@@ -49,6 +61,11 @@ typedef struct render_kernel_args {
   size_t tile_start;
   size_t tile_end;
 } render_batch_args;
+
+static inline float
+fast_exp_neg(float x) {
+  return 1.f / (1.f + x + 0.48f * x * x);
+}
 
 static vec2f
 frame_ndc_to_screen(vec4f p, frame *frame) {
@@ -130,13 +147,21 @@ rasterizer_context_create(gsmodel *model, frame *frame, vec2u tile_size) {
                          (frame->height + tile_size.y - 1) / tile_size.y};
   ctx->tile_size = tile_size;
 
-  // TODO: Find a more memory-friendly way of tagging visiblity. This will crash large scenes.
-  size_t *visible =
-      calloc(model->n_points * ctx->n_tiles.x * ctx->n_tiles.y, sizeof(size_t));
-  ctx->visible = visible;
+  tile_range *tile_ranges = calloc(model->n_points, sizeof(tile_range));
+  ctx->tile_ranges = tile_ranges;
 
-  size_t *n_visible = calloc(ctx->n_tiles.x * ctx->n_tiles.y, sizeof(size_t));
-  ctx->n_visible = n_visible;
+  uint32_t *visibility_tile_counts =
+      calloc(ctx->n_tiles.x * ctx->n_tiles.y, sizeof(uint32_t));
+  ctx->visibility_tile_counts = visibility_tile_counts;
+
+  uint32_t *visibility_tile_offsets =
+      calloc(ctx->n_tiles.x * ctx->n_tiles.y + 1, sizeof(uint32_t));
+  ctx->visibility_tile_offsets = visibility_tile_offsets;
+
+  // TODO: realloc if actual points exceed the allocation here
+  uint32_t *visibility_tile_points =
+      calloc(model->n_points * AVG_TILES_TOUCHED_HEURISTIC, sizeof(uint32_t));
+  ctx->visibility_tile_points = visibility_tile_points;
 
   vec4f *ndc_points = calloc(model->n_points, sizeof(vec4f));
   ctx->ndc_points = ndc_points;
@@ -160,8 +185,7 @@ rasterizer_context_create(gsmodel *model, frame *frame, vec2u tile_size) {
   ctx->n_tile_batches =
       ((ctx->n_tiles.x * ctx->n_tiles.y) + RASTERIZER_TILE_BATCH_SIZE - 1) /
       RASTERIZER_TILE_BATCH_SIZE;
-  // render_batch_args *rargs = calloc(ctx->n_tile_batches,
-  // sizeof(render_batch_args));
+
   render_batch_args *rargs =
       calloc(ctx->n_tiles.x * ctx->n_tiles.y, sizeof(render_batch_args));
   ctx->rargs = rargs;
@@ -176,7 +200,9 @@ rasterizer_get_n_tiles(raster_ctx *ctx) {
 
 void
 rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame) {
-  memset(ctx->n_visible, 0, ctx->n_tiles.x * ctx->n_tiles.y * sizeof(size_t));
+  memset(ctx->visibility_tile_counts, 0,
+         ctx->n_tiles.x * ctx->n_tiles.y * sizeof(uint32_t));
+  memset(ctx->tile_ranges, 0, ctx->model->n_points * sizeof(tile_range));
 
   mat4 proj = camera_get_projection(camera);
   mat4 view = camera_get_view(camera);
@@ -251,18 +277,27 @@ rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame) {
     rect_max.y = fminf(point_screen.y + radius, frame->height);
     if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0) continue;
 
-    for (size_t tile_y = rect_min.y / ctx->tile_size.y;
-         tile_y < (rect_max.y + ctx->tile_size.y - 1) / ctx->tile_size.y;
-         ++tile_y) {
-      for (size_t tile_x = rect_min.x / ctx->tile_size.x;
-           tile_x < (rect_max.x + ctx->tile_size.x - 1) / ctx->tile_size.x;
-           ++tile_x) {
-        if (tile_y >= ctx->n_tiles.y) continue;
-        if (tile_x >= ctx->n_tiles.x) continue;
+    ctx->tile_ranges[i] = (tile_range){
+        .lower =
+            {
+                .x = MIN(rect_min.x / ctx->tile_size.x, ctx->n_tiles.x),
+                .y = MIN(rect_min.y / ctx->tile_size.y, ctx->n_tiles.y),
+            },
+        .upper =
+            {
+                .x = MIN((rect_max.x + ctx->tile_size.x - 1) / ctx->tile_size.x,
+                         ctx->n_tiles.x),
+                .y = MIN((rect_max.y + ctx->tile_size.y - 1) / ctx->tile_size.y,
+                         ctx->n_tiles.y),
+            },
+    };
 
-        size_t tile = tile_y * ctx->n_tiles.x + tile_x;
-        size_t *visible = ctx->visible + (tile * ctx->model->n_points);
-        visible[ctx->n_visible[tile]++] = idx;
+    for (uint32_t ty = ctx->tile_ranges[i].lower.y;
+         ty < ctx->tile_ranges[i].upper.y; ++ty) {
+      for (uint32_t tx = ctx->tile_ranges[i].lower.x;
+           tx < ctx->tile_ranges[i].upper.x; ++tx) {
+        size_t tile = ty * ctx->n_tiles.x + tx;
+        ctx->visibility_tile_counts[tile] += 1;
       }
     }
 
@@ -270,6 +305,33 @@ rasterizer_preprocess(raster_ctx *ctx, camera *camera, frame *frame) {
     ctx->radii[idx] = radius;
     ctx->ndc_points[idx].x = point_screen.x;
     ctx->ndc_points[idx].y = point_screen.y;
+  }
+
+  /* tile offset prefix sum for visibility */
+  ctx->visibility_tile_offsets[0] = 0;
+  for (size_t i = 1; i < ctx->n_tiles.x * ctx->n_tiles.y + 1; ++i) {
+    ctx->visibility_tile_offsets[i] = ctx->visibility_tile_offsets[i - 1] +
+                                      ctx->visibility_tile_counts[i - 1];
+  }
+  size_t total_vis =
+      ctx->visibility_tile_offsets[ctx->n_tiles.x * ctx->n_tiles.y];
+
+  assert(total_vis <= ctx->model->n_points * AVG_TILES_TOUCHED_HEURISTIC);
+  memset(ctx->visibility_tile_counts, 0,
+         ctx->n_tiles.x * ctx->n_tiles.y * sizeof(uint32_t));
+
+  /* update visibility indices */
+  for (size_t i = 0; i < n_valid_points; ++i) {
+    for (uint32_t ty = ctx->tile_ranges[i].lower.y;
+         ty < ctx->tile_ranges[i].upper.y; ++ty) {
+      for (uint32_t tx = ctx->tile_ranges[i].lower.x;
+           tx < ctx->tile_ranges[i].upper.x; ++tx) {
+        size_t tile = ty * ctx->n_tiles.x + tx;
+        size_t idx = ctx->trans_points[i].idx;
+        ctx->visibility_tile_points[ctx->visibility_tile_offsets[tile] +
+                                    ctx->visibility_tile_counts[tile]++] = idx;
+      }
+    }
   }
 }
 
@@ -281,7 +343,9 @@ render_kernel(void *args) {
   frame *frame = rargs->frame;
   size_t tile = rargs->tile;
 
-  if (ctx->n_visible[tile] == 0) return;
+  uint32_t visibility_begin = ctx->visibility_tile_offsets[tile];
+  uint32_t visibility_end = ctx->visibility_tile_offsets[tile + 1];
+  if (visibility_begin == visibility_end) return;
 
   size_t x_start = (tile % ctx->n_tiles.x) * ctx->tile_size.x;
   size_t y_start = (tile / ctx->n_tiles.x) * ctx->tile_size.y;
@@ -290,8 +354,8 @@ render_kernel(void *args) {
   if (x_end > frame->width) x_end = frame->width;
   if (y_end > frame->height) y_end = frame->height;
 
-  size_t *visible = ctx->visible + (tile * ctx->model->n_points);
-  size_t itercnt = ctx->n_visible[tile];
+  uint32_t *visible = ctx->visibility_tile_points + visibility_begin;
+  uint32_t itercnt = visibility_end - visibility_begin;
 
   vec3f *throughputs =
       ctx->throughputs + (tile * ctx->tile_size.x * ctx->tile_size.y);
@@ -307,29 +371,33 @@ render_kernel(void *args) {
 
   for (size_t z = 0; z < itercnt; ++z) {
     // if (n_done == ctx->tile_size.x * ctx->tile_size.y) break;
-    size_t i = visible[z];
+    uint32_t i = visible[z];
     vec3f color = ctx->model->colors[i];
     float opacity = ctx->model->opacities[i];
     vec3f con_o = ctx->inv_cov2d[i];
     float radius = ctx->radii[i];
     vec2f p = {ctx->ndc_points[i].x, ctx->ndc_points[i].y};
+    int px0 = MAX(x_start, (int)(p.x - radius));
+    int px1 = MIN(x_end, (int)(p.x + radius + 1));
+    int py0 = MAX(y_start, (int)(p.y - radius));
+    int py1 = MIN(y_end, (int)(p.y + radius + 1));
 
-    for (size_t y = y_start; y < y_end; ++y) {
+    for (size_t y = py0; y < py1; ++y) {
       vec3f *row_colors = (frame->pixels + y * frame->width);
-      for (size_t x = x_start; x < x_end; ++x) {
+      for (size_t x = px0; x < px1; ++x) {
         size_t tile_idx = (y - y_start) * ctx->tile_size.x + (x - x_start);
         if (done[tile_idx]) continue;
 
         vec2f pix = {(float)x, (float)y};
         vec2f d = {p.x - pix.x, p.y - pix.y};
-        if (fabsf(d.x) > radius || fabsf(d.y) > radius) continue;
+        // if (fabsf(d.x) > radius || fabsf(d.y) > radius) continue;
 
         float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) -
                       con_o.y * d.x * d.y;
         if (power > 0.0f) continue;
-
-        // float alpha = fminf(0.99f, opacity * fastExp(power));
-        float alpha = fminf(0.99f, opacity * exp2f(power * LOG2E));
+        if (power > 9.f) continue;
+        float alpha = fminf(0.99f, opacity * fast_exp_neg(-power));
+        // float alpha = fminf(0.99f, opacity * exp2f(power * LOG2E));
         // float alpha = fminf(0.99f, opacity * expf(power));
         if (alpha < 0.004f) /* 1/255 ~= 0.004 */
           continue;
@@ -351,6 +419,7 @@ render_kernel(void *args) {
           n_done++;
           break;
         }
+
       }
     }
   }
@@ -393,8 +462,10 @@ rasterizer_frame_destroy(frame *frame) {
 void
 rasterizer_context_destroy(raster_ctx *ctx) {
   if (ctx) {
-    free(ctx->visible);
-    free(ctx->n_visible);
+    free(ctx->tile_ranges);
+    free(ctx->visibility_tile_offsets);
+    free(ctx->visibility_tile_counts);
+    free(ctx->visibility_tile_points);
     free(ctx->ndc_points);
     free(ctx->trans_points);
     free(ctx->radii);
