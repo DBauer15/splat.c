@@ -395,7 +395,6 @@ render_kernel(void *args) {
         float power = -0.5f * (con_o.x * d.x * d.x + con_o.z * d.y * d.y) -
                       con_o.y * d.x * d.y;
         if (power > 0.0f) continue;
-        if (power > 9.f) continue;
         float alpha = fminf(0.99f, opacity * fast_exp_neg(-power));
         // float alpha = fminf(0.99f, opacity * exp2f(power * LOG2E));
         // float alpha = fminf(0.99f, opacity * expf(power));
